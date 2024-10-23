@@ -7,8 +7,8 @@ import uuid
 from typing import Type, Tuple, Any, Dict, Generator, Iterable, List, Optional
 
 import sqlalchemy
-from sqlalchemy.orm import Session, declarative_base
-from tidb_vector.sqlalchemy import VectorType
+from sqlalchemy.orm import Session
+from tidb_vector.sqlalchemy import VectorType, VectorIndex, get_declarative_base
 from tidb_vector.integrations.utils import (
     get_embedding_column_definition,
     EmbeddingColumnMismatchError,
@@ -29,10 +29,11 @@ def _create_vector_table_model(
     table_name: str,
     dim: Optional[int] = None,
     distance: Optional[DistanceStrategy] = None,
-) -> Tuple[Type[declarative_base], Type]:
+    create_index: bool = True,
+) -> Tuple[Type[get_declarative_base], Type]:
     """Create a vector model class."""
 
-    OrmBase = declarative_base()  # type: Any
+    OrmBase = get_declarative_base()  # type: Any
 
     class VectorTableModel(OrmBase):
         """
@@ -50,7 +51,6 @@ def _create_vector_table_model(
         embedding = sqlalchemy.Column(
             VectorType(dim),  # Using the VectorType to store the vector data
             nullable=False,  # Assuming non-nullability as before
-            comment="" if distance is None else f"hnsw(distance={distance})",
         )
         document = sqlalchemy.Column(sqlalchemy.Text, nullable=True)
         meta = sqlalchemy.Column(sqlalchemy.JSON, nullable=True)
@@ -63,6 +63,17 @@ def _create_vector_table_model(
                 "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
             ),
         )
+
+    if create_index and distance is not None:
+        index_exp = None
+        if distance == DistanceStrategy.EUCLIDEAN:
+            index_exp = sqlalchemy.func.vec_l2_distance
+        elif distance == DistanceStrategy.COSINE:
+            index_exp = sqlalchemy.func.vec_cosine_distance
+        # elif distance == DistanceStrategy.INNER_PRODUCT:
+        #     index_exp = sqlalchemy.func.vec_inner_product
+        if index_exp is not None:
+            VectorIndex("idx_embedding", index_exp(VectorTableModel.__table__.c.embedding))
 
     return OrmBase, VectorTableModel
 
@@ -85,6 +96,7 @@ class TiDBVectorClient:
         *,
         engine_args: Optional[Dict[str, Any]] = None,
         drop_existing_table: bool = False,
+        create_index: bool = True,
         **kwargs: Any,
     ) -> None:
         """
@@ -114,7 +126,7 @@ class TiDBVectorClient:
         self._bind = self._create_engine()
         self._check_table_compatibility()  # check if the embedding is compatible
         self._orm_base, self._table_model = _create_vector_table_model(
-            table_name, vector_dimension, distance_strategy
+            table_name, vector_dimension, distance_strategy, create_index
         )
         _ = self.distance_strategy  # check if distance strategy is valid
         self._create_table_if_not_exists()
@@ -169,7 +181,9 @@ class TiDBVectorClient:
 
     def _create_engine(self) -> sqlalchemy.engine.Engine:
         """Create a sqlalchemy engine."""
-        return sqlalchemy.create_engine(url=self.connection_string, **self._engine_args)
+        engine = sqlalchemy.create_engine(url=self.connection_string, **self._engine_args)
+        assert engine.name == 'tidb', "Only TiDB is supported."
+        return engine
 
     def __deepcopy__(self, memo):
         # Create a shallow copy of the object to start with, to copy non-engine attributes

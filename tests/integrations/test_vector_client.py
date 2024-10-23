@@ -17,8 +17,8 @@ try:
 
     TABLE_NAME = "tidb_vector_test"
     CONNECTION_STRING = (
-        f"mysql+pymysql://{TestConfig.TIDB_USER}:{TestConfig.TIDB_PASSWORD}"
-        f"@{TestConfig.TIDB_HOST}:4000/test"
+        f"tidb+pymysql://{TestConfig.TIDB_USER}:{TestConfig.TIDB_PASSWORD}"
+        f"@{TestConfig.TIDB_HOST}:{TestConfig.TIDB_PORT}/test"
     )
     if TestConfig.TIDB_SSL:
         CONNECTION_STRING += "?ssl_verify_cert=true&ssl_verify_identity=true"
@@ -28,6 +28,7 @@ except (OSError, ImportError):
     tidb_available = False
 
 ADA_TOKEN_COUNT = 1536
+CREATE_VECTOR_INDEX = True
 
 
 def text_to_embedding(text: str) -> List[float]:
@@ -72,6 +73,7 @@ def test_basic_search(
         connection_string=CONNECTION_STRING,
         vector_dimension=ADA_TOKEN_COUNT,
         drop_existing_table=True,
+        create_index=CREATE_VECTOR_INDEX,
     )
 
     # Add document to the tidb vector
@@ -204,6 +206,7 @@ def test_various_distance_strategies(
             vector_dimension=ADA_TOKEN_COUNT,
             distance_strategy=distance_strategy,  # type: ignore
             drop_existing_table=True,
+            create_index=CREATE_VECTOR_INDEX,
         )
 
         # Add document to the tidb vector
@@ -250,6 +253,7 @@ def test_get_existing_table(
         vector_dimension=ADA_TOKEN_COUNT,
         distance_strategy="cosine",  # type: ignore
         drop_existing_table=True,
+        create_index=CREATE_VECTOR_INDEX,
     )
 
     tidb_vs.insert(
@@ -302,6 +306,7 @@ def test_insert(
         vector_dimension=ADA_TOKEN_COUNT,
         distance_strategy="l2",  # type: ignore
         drop_existing_table=True,
+        create_index=CREATE_VECTOR_INDEX,
     )
 
     # Add document to the tidb vector
@@ -346,6 +351,7 @@ def test_delete(
         vector_dimension=ADA_TOKEN_COUNT,
         distance_strategy="cosine",  # type: ignore
         drop_existing_table=True,
+        create_index=CREATE_VECTOR_INDEX,
     )
 
     ids = tidb_vs.insert(
@@ -422,7 +428,7 @@ def test_delete(
     assert results[0].distance == results[1].distance
     assert results[1].distance == results[2].distance
 
-    # test delete non_extsting by filter
+    # test delete non_existing by filter
     tidb_vs.delete(filter={"category": "P1"})
     results = tidb_vs.query(text_to_embedding("foo"), k=10)
     assert len(results) == 3
@@ -431,7 +437,7 @@ def test_delete(
     assert results[0].distance == results[1].distance
     assert results[1].distance == results[2].distance
 
-    # test delete non_extsting by ids
+    # test delete non_existing by ids
     tidb_vs.delete([ids[1], ids[0]])
     results = tidb_vs.query(text_to_embedding("foo"), k=10)
     assert len(results) == 3
@@ -440,7 +446,7 @@ def test_delete(
     assert results[0].distance == results[1].distance
     assert results[1].distance == results[2].distance
 
-    # test delete non_extsting by filter and ids
+    # test delete non_existing by filter and ids
     tidb_vs.delete([ids[1], ids[0]], filter={"category": "P1"})
     results = tidb_vs.query(text_to_embedding("foo"), k=10)
     assert len(results) == 3
@@ -465,6 +471,7 @@ def test_query(
         vector_dimension=ADA_TOKEN_COUNT,
         distance_strategy="cosine",  # type: ignore
         drop_existing_table=True,
+        create_index=CREATE_VECTOR_INDEX,
     )
 
     ids = tidb_vs.insert(
@@ -596,6 +603,7 @@ def test_complex_query(
         table_name=TABLE_NAME,
         connection_string=CONNECTION_STRING,
         drop_existing_table=True,
+        create_index=CREATE_VECTOR_INDEX,
     )
 
     ids = tidb_vs.insert(
@@ -774,6 +782,7 @@ def test_execute(
         table_name=TABLE_NAME,
         connection_string=CONNECTION_STRING,
         drop_existing_table=True,
+        create_index=CREATE_VECTOR_INDEX,
     )
 
     # Insert data into the table
